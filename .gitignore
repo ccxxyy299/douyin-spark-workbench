@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 运行时数据（绝对不要提交：里面有登录态）
+server/data/
+*.db
+*.sqlite3
+server/data/profiles/
+server/data/artifacts/
+server/data/logs/
+storage-state.json
+*.env
+
+# 前端
+web/node_modules/
+web/dist/
+web/.vite/
+web/tsconfig.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
