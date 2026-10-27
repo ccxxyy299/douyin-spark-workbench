@@ -85,6 +85,7 @@ export default function Jobs() {
               { label: `全部 ${jobs.length}`, value: '全部' },
               { label: `已发送 ${counts('sent')}`, value: 'sent' },
               { label: `待发送 ${counts('pending')}`, value: 'pending' },
+              { label: `已跳过 ${counts('skipped')}`, value: 'skipped' },
               { label: `失败 ${counts('failed')}`, value: 'failed' },
               { label: `待人工 ${counts('needs_human')}`, value: 'needs_human' },
             ]}
