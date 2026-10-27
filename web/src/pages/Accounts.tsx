@@ -77,7 +77,12 @@ export default function Accounts() {
   const handleCheck = async (account: Account) => {
     try {
       const result = await api.loginStatus(account.id)
-      message.info(result.logged_in ? '登录态有效' : `登录态已失效${result.error ? `：${result.error}` : ''}`)
+      if (result.check_failed) {
+        // 浏览器没起来 ≠ 登录失效，别把检查失败误报成要重新扫码
+        message.warning(`登录态检查失败${result.error ? `：${result.error}` : ''}，状态未变更`)
+      } else {
+        message.info(result.logged_in ? '登录态有效' : '登录态已失效，需要重新扫码登录')
+      }
       await refresh()
     } catch (error) {
       message.error(String(error))

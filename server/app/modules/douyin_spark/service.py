@@ -78,8 +78,14 @@ async def check_login(account_id: int) -> dict[str, Any]:
 
     必须拿账号锁：不拿的话，和正在执行的任务并发启动浏览器，
     同一个 profile 目录会被 launch 两次（Chrome 进程锁冲突）。
+
+    浏览器起不来 ≠ 登录失效：检查失败时把状态标回 unknown 并把
+    错误带给前端，不能让"检查失败"被当成"登录态已失效"
+    （NotImplementedError 这类异常 str() 为空，消息里兜底带上类型名）。
     """
 
+    logged_in: Optional[bool] = None
+    error = ""
     try:
         async with browser_manager.lock_for(account_id):
             context = await browser_manager.context_for(account_id)
@@ -89,16 +95,37 @@ async def check_login(account_id: int) -> dict[str, Any]:
 
             logged_in = bool(names & set(selectors.get("logged_in_cookies")))
     except Exception as exc:  # noqa: BLE001
-        return {"logged_in": False, "error": str(exc)}
+        error = f"{type(exc).__name__}: {exc}".rstrip(": ").rstrip(":")
 
     with session_scope() as session:
         account = session.get(Account, account_id)
         if account is not None:
-            account.status = "active" if logged_in else "expired"
+            if logged_in is None:
+                account.status = "unknown"
+            else:
+                account.status = "active" if logged_in else "expired"
             account.last_check_at = now()
             session.add(account)
 
-    return {"logged_in": logged_in, "error": ""}
+    return {
+        "logged_in": bool(logged_in),
+        "check_failed": logged_in is None,
+        "error": error,
+    }
+
+
+def mark_login_expired(account_id: int) -> None:
+    """登录失效/风控需要人工时，把账号状态同步标失效。
+
+    各业务入口（同步好友、采集表情、发送任务）共用：
+    只从 active 降级，不覆盖 unknown / busy。
+    """
+
+    with session_scope() as session:
+        account = session.get(Account, account_id)
+        if account is not None and account.status == "active":
+            account.status = "expired"
+            session.add(account)
 
 
 # ── 好友 ─────────────────────────────────────────────────────────────────
@@ -177,8 +204,14 @@ async def sync_friends(account_id: int) -> dict[str, Any]:
     async with browser_manager.lock_for(account_id):
         page = await browser_manager.page_for(account_id)
         chat = DouyinChatPage(page)
-        await chat.open()
-        conversations = await chat.scan_conversations()
+        try:
+            await chat.open()
+            conversations = await chat.scan_conversations()
+        except PageError as exc:
+            # 同步时发现登录失效，账号页不能再绿着 —— 和发送任务失败同一处理
+            if exc.needs_human:
+                mark_login_expired(account_id)
+            raise
 
     added = 0
     updated = 0
@@ -520,6 +553,33 @@ def generate_jobs_for_plan(plan_id: int, day: datetime) -> int:
             session.add(plan)
 
     return created
+
+
+def reset_failed_jobs(plan_id: int, day: datetime) -> int:
+    """把该计划当天 ``failed`` 的任务重置为 pending，供「立即执行」重跑。
+
+    generate 的幂等查重不分状态 —— 当天的任务只要存在（哪怕已失败）就
+    不会再生成新的，而「立即执行」又只执行 pending。不在入口处重置的话，
+    一批失败任务会把手动重跑的入口永远堵死（表现为点了没反应：
+    生成 0 个、执行 0 个）。重置时清空重试计数，给足本轮重试预算。
+    """
+
+    plan_date = day.strftime("%Y-%m-%d")
+    with session_scope() as session:
+        jobs = session.exec(
+            select(SendJob).where(
+                SendJob.plan_id == plan_id,
+                SendJob.plan_date == plan_date,
+                SendJob.state == "failed",
+            )
+        ).all()
+        for job in jobs:
+            job.state = "pending"
+            job.error = ""
+            job.attempt = 0
+            job.updated_at = now()
+            session.add(job)
+        return len(jobs)
 
 
 # ── 直接发送 ─────────────────────────────────────────────────────────────

@@ -52,7 +52,9 @@ export const api = {
     post<Account>('/douyin/accounts', { name, note }),
   deleteAccount: (id: number) => del<{ ok: boolean }>(`/douyin/accounts/${id}`),
   loginStatus: (id: number) =>
-    request<{ logged_in: boolean; error: string }>(`/douyin/accounts/${id}/login-status`),
+    request<{ logged_in: boolean; check_failed?: boolean; error: string }>(
+      `/douyin/accounts/${id}/login-status`,
+    ),
   login: (id: number) => post<{ logged_in: boolean }>(`/douyin/accounts/${id}/login`),
   logout: (id: number) => post<{ ok: boolean }>(`/douyin/accounts/${id}/logout`),
 

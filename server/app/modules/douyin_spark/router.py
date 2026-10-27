@@ -21,7 +21,7 @@ from app.db import get_session, session_scope
 from app.models import Account, Friend, MessageTemplate, SendJob, SendLog, SendPlan, StickerItem, today_str
 from app.modules.douyin_spark import selectors
 from app.modules.douyin_spark.browser import browser_manager, wait_for_login
-from app.modules.douyin_spark.chat_page import DouyinChatPage, first_visible
+from app.modules.douyin_spark.chat_page import DouyinChatPage, PageError, first_visible
 from app.modules.douyin_spark.executor import execute_job
 from app.modules.douyin_spark.service import (
     bulk_set_selection,
@@ -36,7 +36,9 @@ from app.modules.douyin_spark.service import (
     list_friends,
     list_plans,
     list_templates,
+    mark_login_expired,
     prepare_quick_jobs,
+    reset_failed_jobs,
     save_plan,
     save_template,
     sync_friends,
@@ -150,7 +152,7 @@ async def start_login(account_id: int, timeout_seconds: int = Query(default=300,
                 account = session.get(Account, account_id)
                 if account is not None:
                     account.status = "active"
-                    account.last_login_at = account.last_login_at or datetime.now()
+                    account.last_login_at = datetime.now()
                     session.add(account)
 
     return {"logged_in": logged_in}
@@ -292,6 +294,8 @@ async def post_run_now(plan_id: int) -> dict[str, Any]:
         plan_name = plan.name
 
     created = generate_jobs_for_plan(plan_id, datetime.now())
+    # 当天已失败的任务重置回 pending，否则手动重跑永远执行 0 条
+    reset_failed_jobs(plan_id, datetime.now())
     executed = 0
     with session_scope() as session:
         jobs = session.exec(
@@ -322,6 +326,8 @@ async def post_send_now(payload: QuickSendRequest) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="账号不存在")
 
     plan_id, created = prepare_quick_jobs(payload.account_id, payload.friend_ids, payload.template_ids)
+    # 同 run-now：当天失败过的任务要重置，否则直接发送永远执行 0 条
+    reset_failed_jobs(plan_id, datetime.now())
 
     executed = 0
     with session_scope() as session:
@@ -348,7 +354,12 @@ async def post_collect_stickers(account_id: int) -> dict[str, Any]:
     async with browser_manager.lock_for(account_id):
         page = await browser_manager.page_for(account_id)
         chat = DouyinChatPage(page)
-        await chat.open()
+        try:
+            await chat.open()
+        except PageError as exc:
+            if exc.needs_human:
+                mark_login_expired(account_id)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         # 表情按钮挂在会话输入框的工具条上；不进会话就没有输入框。
         # 私信页刚打开时右侧往往是空的 —— 先进左侧第一个会话。
         if await first_visible(page, ["message_input"], timeout_ms=3_000) is None:

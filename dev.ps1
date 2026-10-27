@@ -39,9 +39,12 @@ if (-not (Test-Path 'node_modules')) {
 Pop-Location
 
 Write-Host "==> 启动后端 :8766" -ForegroundColor Green
+# 不能加 --reload：uvicorn 在 Windows 上带 reload 时用 SelectorEventLoop，
+# 它不支持 subprocess，Playwright 会抛 NotImplementedError 起不了浏览器。
+# 改完代码需要手动重启这个后端窗口。
 Start-Process -FilePath 'powershell' -ArgumentList @(
     '-NoExit', '-Command',
-    "cd '$server'; & '$server\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8766 --reload"
+    "cd '$server'; & '$server\.venv\Scripts\python.exe' -m uvicorn app.main:app --port 8766"
 )
 
 Start-Sleep -Seconds 3
