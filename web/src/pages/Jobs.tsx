@@ -188,6 +188,14 @@ export default function Jobs() {
                   locale={{ emptyText: '还没有日志' }}
                   columns={[
                     {
+                      title: '任务 ID',
+                      dataIndex: 'job_id',
+                      width: 80,
+                      render: (value: number | null) => (
+                        value ? <Typography.Text className="mono">#{value}</Typography.Text> : '—'
+                      ),
+                    },
+                    {
                       title: '级别',
                       dataIndex: 'level',
                       width: 80,

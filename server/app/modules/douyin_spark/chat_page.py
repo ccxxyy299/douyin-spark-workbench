@@ -63,10 +63,15 @@ def classify_flame_state(icon_src: str) -> str:
 def normalize_name(value: str) -> str:
     """归一化显示名。
 
-    抖音在某些位置会用不间断空格（U+00A0），直接比对会漏。
+    抖音在某些位置会用不间断空格（U+00A0）和零宽字符（U+200B-D, U+FEFF），
+    直接比对会漏。与 verifier.py 里的 JS normalize 保持同一语义。
     """
 
-    return str(value or "").replace(" ", " ").strip()
+    import re
+
+    text = str(value or "")
+    text = re.sub(r"[\s\u00A0\u200B\u200C\u200D\uFEFF]+", " ", text)
+    return text.strip()
 
 
 async def first_visible(page: Page, selector_names: list[str], timeout_ms: int = 8_000) -> Optional[Locator]:
