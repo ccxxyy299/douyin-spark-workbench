@@ -103,6 +103,11 @@ export default function Plans() {
   const handleSave = async () => {
     if (!accountId) return
     const values = await form.validateFields()
+    // 一天都不选时后端会把空串当成默认值（每天），语义会反 —— 直接拦下
+    if (!values.days_of_week || values.days_of_week.length === 0) {
+      message.warning('「日期」至少选一天')
+      return
+    }
     const payload = {
       name: values.name ?? '',
       daily_time: values.daily_time ? values.daily_time.format('HH:mm') : '09:30',
@@ -249,6 +254,7 @@ export default function Plans() {
                   <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)} />
                   <Popconfirm
                     title="删除这个计划？"
+                    description="该计划的历史任务记录会保留在「任务记录」页。"
                     onConfirm={async () => {
                       await api.deletePlan(row.id)
                       await load()
@@ -284,7 +290,7 @@ export default function Plans() {
               <InputNumber min={0} max={240} style={{ width: 120 }} />
             </Form.Item>
           </Space>
-          <Form.Item name="days_of_week" label="重复">
+          <Form.Item name="days_of_week" label="日期">
             <Checkbox.Group options={WEEKDAYS.map((label, index) => ({ label, value: index }))} />
           </Form.Item>
           <Form.Item

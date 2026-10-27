@@ -9,7 +9,7 @@ from datetime import datetime
 
 import app.modules.douyin_spark.executor as executor
 from app.models import SendPlan
-from app.modules.douyin_spark.chat_page import classify_flame_state, parse_streak
+from app.modules.douyin_spark.chat_page import classify_flame_state, parse_streak, strip_flame_suffix
 from app.modules.douyin_spark.service import plan_runs_on
 from app.settings import settings
 
@@ -30,6 +30,31 @@ class ParseStreakTest(unittest.TestCase):
         # "重燃中 2/3" 里的 2/3 不是天数，不能当成 2 天
         self.assertEqual(parse_streak("重燃中 2/3"), 0)
         self.assertEqual(parse_streak("3天后复燃"), 0)
+
+
+class StripFlameSuffixTest(unittest.TestCase):
+    """会话标题剥离 —— 剥错了就确认不了会话，好友发不出去。"""
+
+    def test_normal_and_special_states(self):
+        self.assertEqual(strip_flame_suffix("卞秋 708"), "卞秋")
+        self.assertEqual(strip_flame_suffix("卞秋 重燃中 2/3"), "卞秋")
+        self.assertEqual(strip_flame_suffix("iannnnnnn 6 天后消失"), "iannnnnnn")
+        self.assertEqual(strip_flame_suffix("A B 5 天后消失"), "A B")
+
+    def test_nickname_ending_with_digits_is_kept(self):
+        # 回归：曾经的循环剥离会把昵称尾部数字也剥掉
+        self.assertEqual(strip_flame_suffix("小甜甜123 708"), "小甜甜123")
+        self.assertEqual(strip_flame_suffix("用户007 重燃中 2/3"), "用户007")
+
+    def test_names_with_spaces(self):
+        self.assertEqual(
+            strip_flame_suffix("zan_, 小比方, 海谷, 礿箹龠玥 728"),
+            "zan_, 小比方, 海谷, 礿箹龠玥",
+        )
+
+    def test_plain_name(self):
+        self.assertEqual(strip_flame_suffix("叶秀青"), "叶秀青")
+        self.assertEqual(strip_flame_suffix(""), "")
 
 
 class ClassifyFlameStateTest(unittest.TestCase):

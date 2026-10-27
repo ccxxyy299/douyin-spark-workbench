@@ -60,6 +60,25 @@ def classify_flame_state(icon_src: str) -> str:
     return "gray" if filename.startswith("gray_") else "normal"
 
 
+def strip_flame_suffix(title: str) -> str:
+    """剥掉会话标题里的火花状态尾巴，只留昵称。
+
+    实测标题形如 ``名字 708`` / ``名字 重燃中 2/3`` / ``名字 6 天后消失``。
+
+    **必须只剥"空格 + 状态"**：昵称本身可能以数字结尾（如"小甜甜123"），
+    无条件剥数字会把名字截断，这类好友就永远确认不了会话、发不出去。
+    """
+
+    text = str(title or "").strip()
+    previous = None
+    while text and text != previous:
+        previous = text
+        text = re.sub(r"\s+\d+\s*天后消失$", "", text).strip()
+        text = re.sub(r"\s+(重燃中|复燃)[\d\s/]*$", "", text).strip()
+        text = re.sub(r"\s+\d+$", "", text).strip()
+    return text
+
+
 def normalize_name(value: str) -> str:
     """归一化显示名。
 
@@ -527,24 +546,14 @@ class DouyinChatPage:
         return False
 
     async def current_conversation_title(self) -> Optional[str]:
-        """当前会话面板顶部显示的名字。
-
-        标题里可能混着火花状态尾巴：``名字 708`` / ``名字 重燃中 2/3`` /
-        ``名字 6 天后消失`` —— 循环剥掉这些只留名字，否则确认会话时
-        永远对不上（这些状态的好友会被误判成"进错会话"）。
-        """
+        """当前会话面板顶部显示的名字（已剥掉火花状态尾巴）。"""
 
         for selector in selectors.get("conversation_panel_title"):
             try:
                 locator = self.page.locator(selector)
                 if await locator.count() == 0:
                     continue
-                text = normalize_name(await locator.first.inner_text())
-                previous = None
-                while text and text != previous:
-                    previous = text
-                    text = re.sub(r"[\d🔥/\s]+$", "", text).strip()
-                    text = re.sub(r"(\d+\s*天后消失|重燃中[\d\s/]*|复燃[\d\s/]*)$", "", text).strip()
+                text = strip_flame_suffix(normalize_name(await locator.first.inner_text()))
                 if text:
                     return text
             except Exception:  # noqa: BLE001

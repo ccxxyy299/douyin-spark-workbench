@@ -5,9 +5,8 @@
 * ``Friend.display_name`` 是好友的业务主键（抖音会话列表里显示的名字）。
   抖音没有稳定暴露 user_id，昵称是页面上唯一稳定的可见标识；``sec_uid``
   作为可选的加强键，能拿到就存。
-* ``SendJob`` 上有 ``(plan_id, friend_id, plan_date)`` 唯一约束，
-  这是"同一天同好友同计划只发一次"的落点 —— 重启、改计划、重复扫描
-  都不会重复发送。
+* ``SendJob`` 的防重由代码层判断（该好友当天是否有 sent 任务），
+  不依赖数据库唯一约束 —— 失败/跳过的任务行原样保留为历史记录。
 * 所有"今天是否已发"的判断都基于 ``SendJob.plan_date`` + 状态，
   不依赖火花天数（火花可能已经熄灭，用天数判断会误判）。
 """
@@ -137,6 +136,8 @@ class SendPlan(SQLModel, table=True):
     date_to: str = Field(default="")
 
     enabled: bool = Field(default=True)
+    # 软删除：计划行保留在库里（任务的外键依旧有效），只是不再显示/调度
+    deleted: bool = Field(default=False)
     # 该计划最后一次生成任务的日期，用于避免重复生成
     last_plan_date: str = Field(default="")
 

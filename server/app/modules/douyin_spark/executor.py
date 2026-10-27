@@ -23,7 +23,7 @@ from typing import Any, Optional
 from sqlmodel import Session, select
 
 from app.db import session_scope
-from app.models import Account, Friend, SendJob, SendLog, today_str
+from app.models import Account, Friend, MessageTemplate, SendJob, SendLog, today_str
 from app.modules.douyin_spark.browser import browser_manager
 from app.modules.douyin_spark.chat_page import DouyinChatPage, PageError
 from app.modules.douyin_spark.senders import StickerRef, send_image, send_sticker, send_text
@@ -110,6 +110,22 @@ async def capture_screenshot(page, job_id: int) -> str:
         return ""
 
 
+def _sticker_ref_for(job_id: int, template_id: Optional[int], name: str) -> StickerRef:
+    """拼出表情引用。模板上存着分类和兜底序号，任务表里只有名字。"""
+
+    if not template_id:
+        return StickerRef(name=name)
+    with session_scope() as session:
+        template = session.get(MessageTemplate, template_id)
+        if template is None:
+            return StickerRef(name=name)
+        return StickerRef(
+            name=template.sticker_name or name,
+            category=template.sticker_category,
+            fallback_index=template.sticker_fallback_index,
+        )
+
+
 async def execute_job(job_id: int) -> None:
     """执行一个发送任务。异常一律吞掉并落库，不让 worker 崩掉。"""
 
@@ -126,6 +142,7 @@ async def execute_job(job_id: int) -> None:
         friend_name = job.friend_name
         message_kind = job.message_kind
         message_payload = job.message_payload
+        template_id = job.template_id
         # 只把标量带出这段 session。session_scope 退出时会 commit + close，
         # 对象整体过期 —— 之后再读它的任何字段（连主键都一样）都会 DetachedInstanceError。
 
@@ -181,7 +198,11 @@ async def execute_job(job_id: int) -> None:
             elif kind == "image":
                 await send_image(page, message_payload)
             elif kind == "sticker":
-                await send_sticker(page, StickerRef(name=message_payload))
+                # 分类和兜底序号不在任务表里（message_payload 只有名字），
+                # 从模板读 —— 抖音表情面板默认只渲染第一屏，
+                # 不带分类就找不到不在默认分类里的表情。
+                sticker = _sticker_ref_for(job_id, template_id, message_payload)
+                await send_sticker(page, sticker)
             else:
                 raise PageError(f"不支持的消息类型: {kind}")
 

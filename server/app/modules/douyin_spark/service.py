@@ -327,8 +327,16 @@ def delete_template(session: Session, template_id: int) -> None:
 
 # ── 计划 ─────────────────────────────────────────────────────────────────
 def list_plans(session: Session, account_id: int) -> list[SendPlan]:
+    """计划列表。软删除的不显示；「直接发送」的容器计划原样返回 ——
+    用户希望列表里能看到它（直接发送的任务全挂在这下面）。"""
+
     return list(
-        session.exec(select(SendPlan).where(SendPlan.account_id == account_id).order_by(SendPlan.id)).all()
+        session.exec(
+            select(SendPlan)
+            .where(SendPlan.account_id == account_id)
+            .where(SendPlan.deleted == False)  # noqa: E712
+            .order_by(SendPlan.id)
+        ).all()
     )
 
 
@@ -385,10 +393,21 @@ def save_plan(session: Session, account_id: int, payload: dict[str, Any], plan_i
 
 
 def delete_plan(session: Session, plan_id: int) -> None:
+    """删除计划（软删除）。
+
+    任务记录是账本，删计划不能连记录一起删 —— 计划行保留在库里，
+    只标记 deleted + 停用。任务的外键依旧有效，历史一条不少，
+    列表和调度器都不再看到它。删「直接发送（手动）」容器计划后，
+    下次直接发送会自动重建一个新的。
+    """
+
     plan = session.get(SendPlan, plan_id)
-    if plan is not None:
-        session.delete(plan)
-        session.commit()
+    if plan is None:
+        return
+    plan.deleted = True
+    plan.enabled = False
+    session.add(plan)
+    session.commit()
 
 
 def plan_runs_on(plan: SendPlan, day: datetime) -> bool:
@@ -575,7 +594,9 @@ def prepare_quick_jobs(account_id: int, friend_ids: list[int], template_ids: lis
     with session_scope() as session:
         plan = session.exec(
             select(SendPlan).where(
-                SendPlan.account_id == account_id, SendPlan.name == QUICK_SEND_PLAN_NAME
+                SendPlan.account_id == account_id,
+                SendPlan.name == QUICK_SEND_PLAN_NAME,
+                SendPlan.deleted == False,  # noqa: E712
             )
         ).first()
         if plan is None:

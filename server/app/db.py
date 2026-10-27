@@ -57,12 +57,15 @@ def _migrate() -> None:
         friend_columns = {row[1] for row in conn.execute(text("PRAGMA table_info(friend)"))}
         if "flame_state" not in friend_columns:
             conn.execute(text("ALTER TABLE friend ADD COLUMN flame_state TEXT NOT NULL DEFAULT ''"))
+        plan_columns = {row[1] for row in conn.execute(text("PRAGMA table_info(send_plan)"))}
+        if "deleted" not in plan_columns:
+            conn.execute(text("ALTER TABLE send_plan ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0"))
         _rebuild_send_job_without_unique(conn)
 
 
 def _rebuild_send_job_without_unique(conn) -> None:
     """老库的 send_job 带着 (plan_id, friend_id, plan_date) 唯一索引，
-    失败重跑要生成**新的任务行**（旧行保留为历史），会被它挡住。
+    失败重跑要生成**新的任务行**（旧行保留为历史），会被它挡住宿。
 
     SQLite 去不掉表级约束，只能重建表。列定义和外键从 PRAGMA 动态抄，
     不手写 DDL，防止和 models.py 漂移。没有该索引（新库）则什么都不做。
