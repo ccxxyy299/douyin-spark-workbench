@@ -144,10 +144,16 @@ class SendPlan(SQLModel, table=True):
 
 
 class SendJob(SQLModel, table=True):
-    """一次具体的发送任务。"""
+    """一次具体的发送任务。
+
+    不设 (plan_id, friend_id, plan_date) 唯一约束：防重由代码层判
+    "该好友当天是否已有 sent 的任务"决定（见 generate_jobs_for_plan）。
+    失败的任务行原样保留为历史记录，重跑会生成**新的一行**，
+    任务记录页的状态和日志页才能一一对应。老库的唯一索引由
+    db._migrate 重建表移除。
+    """
 
     __tablename__ = "send_job"
-    __table_args__ = (UniqueConstraint("plan_id", "friend_id", "plan_date", name="uq_job_plan_friend_date"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
     plan_id: int = Field(foreign_key="send_plan.id", index=True)

@@ -474,7 +474,8 @@ def pick_template(templates: list[MessageTemplate], friend: Friend, session: Ses
 def generate_jobs_for_plan(plan_id: int, day: datetime) -> int:
     """为某个计划在某天生成任务。
 
-    幂等：``(plan_id, friend_id, plan_date)`` 唯一，重复调用不会重复生成。
+    防重判据：该好友当天**发送成功过**（state=sent）才跳过。失败/跳过
+    的任务行原样保留为历史（和日志一一对应），重跑会生成新的一行。
     生成 0 条时**不**写 ``last_plan_date`` —— 当天晚些时候补勾好友 /
     启用模板，planner 还能补生成，不会静默漏发一整天。
 
@@ -505,14 +506,15 @@ def generate_jobs_for_plan(plan_id: int, day: datetime) -> int:
         plan_at = plan_datetime(plan, day)
 
         for friend in friends:
-            exists = session.exec(
+            sent = session.exec(
                 select(SendJob).where(
                     SendJob.plan_id == plan.id,
                     SendJob.friend_id == friend.id,
                     SendJob.plan_date == plan_date,
+                    SendJob.state == "sent",
                 )
             ).first()
-            if exists is not None:
+            if sent is not None:
                 continue
 
             template = pick_template(templates, friend, session)
@@ -553,33 +555,6 @@ def generate_jobs_for_plan(plan_id: int, day: datetime) -> int:
             session.add(plan)
 
     return created
-
-
-def reset_failed_jobs(plan_id: int, day: datetime) -> int:
-    """把该计划当天 ``failed`` 的任务重置为 pending，供「立即执行」重跑。
-
-    generate 的幂等查重不分状态 —— 当天的任务只要存在（哪怕已失败）就
-    不会再生成新的，而「立即执行」又只执行 pending。不在入口处重置的话，
-    一批失败任务会把手动重跑的入口永远堵死（表现为点了没反应：
-    生成 0 个、执行 0 个）。重置时清空重试计数，给足本轮重试预算。
-    """
-
-    plan_date = day.strftime("%Y-%m-%d")
-    with session_scope() as session:
-        jobs = session.exec(
-            select(SendJob).where(
-                SendJob.plan_id == plan_id,
-                SendJob.plan_date == plan_date,
-                SendJob.state == "failed",
-            )
-        ).all()
-        for job in jobs:
-            job.state = "pending"
-            job.error = ""
-            job.attempt = 0
-            job.updated_at = now()
-            session.add(job)
-        return len(jobs)
 
 
 # ── 直接发送 ─────────────────────────────────────────────────────────────

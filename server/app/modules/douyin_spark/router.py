@@ -38,7 +38,6 @@ from app.modules.douyin_spark.service import (
     list_templates,
     mark_login_expired,
     prepare_quick_jobs,
-    reset_failed_jobs,
     save_plan,
     save_template,
     sync_friends,
@@ -294,8 +293,6 @@ async def post_run_now(plan_id: int) -> dict[str, Any]:
         plan_name = plan.name
 
     created = generate_jobs_for_plan(plan_id, datetime.now())
-    # 当天已失败的任务重置回 pending，否则手动重跑永远执行 0 条
-    reset_failed_jobs(plan_id, datetime.now())
     executed = 0
     with session_scope() as session:
         jobs = session.exec(
@@ -326,8 +323,6 @@ async def post_send_now(payload: QuickSendRequest) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail="账号不存在")
 
     plan_id, created = prepare_quick_jobs(payload.account_id, payload.friend_ids, payload.template_ids)
-    # 同 run-now：当天失败过的任务要重置，否则直接发送永远执行 0 条
-    reset_failed_jobs(plan_id, datetime.now())
 
     executed = 0
     with session_scope() as session:
