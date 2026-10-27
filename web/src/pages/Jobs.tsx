@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Badge, Button, Card, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Button, Card, Segmented, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { api } from '../api'
 import { useAccount } from '../store'
@@ -83,10 +83,10 @@ export default function Jobs() {
             onChange={(value) => setStateFilter(value as string)}
             options={[
               { label: `全部 ${jobs.length}`, value: '全部' },
-              { label: <Badge count={counts('sent')} size="small" offset={[8, -2]}>已发送</Badge>, value: 'sent' },
-              { label: <Badge count={counts('pending')} size="small" offset={[8, -2]}>待发送</Badge>, value: 'pending' },
-              { label: <Badge count={counts('failed')} size="small" offset={[8, -2]}>失败</Badge>, value: 'failed' },
-              { label: <Badge count={counts('needs_human')} size="small" offset={[8, -2]}>待人工</Badge>, value: 'needs_human' },
+              { label: `已发送 ${counts('sent')}`, value: 'sent' },
+              { label: `待发送 ${counts('pending')}`, value: 'pending' },
+              { label: `失败 ${counts('failed')}`, value: 'failed' },
+              { label: `待人工 ${counts('needs_human')}`, value: 'needs_human' },
             ]}
           />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
